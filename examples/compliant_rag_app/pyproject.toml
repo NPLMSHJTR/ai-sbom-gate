@@ -1,0 +1,11 @@
+[project]
+name = "compliant-rag-demo"
+version = "0.1.0"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "pypdfium2>=4.0",
+    "onnxruntime>=1.18",
+    "fastapi>=0.110",
+    "pydantic>=2.6",
+    "transformers>=4.40",
+]

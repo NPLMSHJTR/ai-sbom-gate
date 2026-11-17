@@ -1,0 +1,106 @@
+name: "AI-SBOM-Gate License & ML-BOM Gate"
+description: "Scan Python/Node dependencies, Hugging Face models, and datasets for license conflicts and export CycloneDX 1.6 ML-BOM + SARIF 2.1.0."
+author: "AI-SBOM-Gate Contributors"
+branding:
+  icon: "check-circle"
+  color: "green"
+
+inputs:
+  path:
+    description: "Target repository or directory path to scan."
+    required: false
+    default: "."
+  policy:
+    description: "Compliance policy: commercial-closed-source, open-source-permissive, apache-2.0-strict, academic-research."
+    required: false
+    default: "commercial-closed-source"
+  exclude:
+    description: "Comma-separated path segments or glob prefixes to skip (e.g. 'examples,fixtures')."
+    required: false
+    default: ""
+  online:
+    description: "Query live Hugging Face Hub and PyPI APIs for unknown assets."
+    required: false
+    default: "false"
+  format:
+    description: "Report format: console, json, markdown, sarif, html, cyclonedx, notices."
+    required: false
+    default: "markdown"
+  output-file:
+    description: "Optional file path to save the primary report."
+    required: false
+    default: ""
+  mlbom-output:
+    description: "Optional file path to also export a CycloneDX 1.6 ML-BOM JSON file."
+    required: false
+    default: ""
+  fail-on:
+    description: "Minimum finding severity that fails the gate: critical, high, medium, low, none."
+    required: false
+    default: "high"
+
+outputs:
+  assets-count:
+    description: "Total code, model, and dataset assets discovered."
+    value: ${{ steps.run-gate.outputs.assets_count }}
+  findings-count:
+    description: "Total compliance findings detected."
+    value: ${{ steps.run-gate.outputs.findings_count }}
+  score:
+    description: "Compliance score (0-100)."
+    value: ${{ steps.run-gate.outputs.score }}
+  passed:
+    description: "Whether the repository passed the configured compliance policy."
+    value: ${{ steps.run-gate.outputs.passed }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run AI-SBOM-Gate Scan
+      id: run-gate
+      shell: python
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_POLICY: ${{ inputs.policy }}
+        INPUT_EXCLUDE: ${{ inputs.exclude }}
+        INPUT_ONLINE: ${{ inputs.online }}
+        INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_OUTPUT_FILE: ${{ inputs.output-file }}
+        INPUT_MLBOM_OUTPUT: ${{ inputs.mlbom-output }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        import os
+        import sys
+        from pathlib import Path
+
+        sys.path.insert(0, str(Path(os.environ["ACTION_PATH"]) / "src"))
+        from ai_sbom_gate.cli import execute_scan_for_action
+
+        excludes = [x.strip() for x in os.environ.get("INPUT_EXCLUDE", "").split(",") if x.strip()]
+        res = execute_scan_for_action(
+            target_path=os.environ.get("INPUT_PATH", ".").strip() or ".",
+            policy=os.environ.get("INPUT_POLICY", "commercial-closed-source").strip(),
+            excludes=excludes,
+            online=os.environ.get("INPUT_ONLINE", "false").strip().lower() == "true",
+            report_format=os.environ.get("INPUT_FORMAT", "markdown").strip(),
+            output_file=os.environ.get("INPUT_OUTPUT_FILE", "").strip() or None,
+            mlbom_output=os.environ.get("INPUT_MLBOM_OUTPUT", "").strip() or None,
+            fail_on=os.environ.get("INPUT_FAIL_ON", "high").strip(),
+        )
+
+        gh_out = os.environ.get("GITHUB_OUTPUT")
+        if gh_out:
+            with open(gh_out, "a", encoding="utf-8") as fh:
+                fh.write(f"assets_count={res['assets_count']}\n")
+                fh.write(f"findings_count={res['findings_count']}\n")
+                fh.write(f"score={res['score']}\n")
+                fh.write(f"passed={str(res['passed']).lower()}\n")
+
+        gh_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if gh_summary and res.get("markdown_summary"):
+            with open(gh_summary, "a", encoding="utf-8") as fh:
+                fh.write(res["markdown_summary"] + "\n")
+
+        if not res["passed"]:
+            sys.exit(1)

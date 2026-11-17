@@ -1,0 +1,34 @@
+name: Self-Compliance Gate
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  compliance-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit repository itself (expected PASS 100/100)
+        uses: ./
+        with:
+          path: "."
+          exclude: "examples"
+          policy: "open-source-permissive"
+          format: "sarif"
+          output-file: "self-compliance.sarif"
+          mlbom-output: "self-mlbom.cdx.json"
+          fail-on: "low"
+
+      - name: Audit intentionally risky example (diagnostic report)
+        uses: ./
+        with:
+          path: "examples/risky_ai_startup_app"
+          policy: "commercial-closed-source"
+          format: "markdown"
+          fail-on: "none"
